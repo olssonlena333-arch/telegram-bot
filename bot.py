@@ -8,7 +8,7 @@ print("BOT VERSION: FULL ADMIN + DATABASE")
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_ID = 6129752426
-GROUP_ID = -5115367686
+GROUP_ID = -1002464136190
 ACTIVE_DROP = {
     "code": None,
     "points": 0,
@@ -97,7 +97,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         text = "Du er allerede tilmeldt Fast Win Points 🎯"
 
-    await update.message.reply_text(text)
+    await update.effective_chat.send_message(text)
 
 
 
