@@ -4,7 +4,7 @@ import os
 import time
 import sqlite3
 
-print("BOT VERSION: FULL ADMIN + DATABASE + USERNAME FIX")
+print("BOT VERSION: ADMIN TOP + HIDDEN POINTS + PERSISTENT DISK")
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_ID = 6129752426
@@ -18,8 +18,10 @@ ACTIVE_DROP = {
     "winner_name": None
 }
 
-# --- Database ---
-conn = sqlite3.connect("fwp.db", check_same_thread=False)
+# --- Database (persistent disk) ---
+DB_PATH = "/data/fwp.db"
+
+conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = conn.cursor()
 
 cursor.execute("""
@@ -38,20 +40,19 @@ cursor.execute("""
     )
 """)
 
-# Lägg till username-kolumn om den inte finns (säker migration)
+# Säker migration – lägg till username-kolumn om den inte finns
 try:
     cursor.execute("ALTER TABLE users ADD COLUMN username TEXT")
     conn.commit()
     print("USERNAME COLUMN ADDED")
 except Exception:
-    pass  # Kolumnen finns redan, inget problem
+    pass
 
 conn.commit()
 
 # --- Helpers ---
 
 def get_display_name(user):
-    """Returnerar @användarnamn eller förnamn."""
     if user.username:
         return f"@{user.username}"
     return user.first_name or f"User {user.id}"
@@ -68,7 +69,6 @@ def get_points(user_id):
     return cursor.fetchone()[0]
 
 def update_username(user):
-    """Uppdaterar användarnamn i databasen varje gång användaren interagerar."""
     name = get_display_name(user)
     cursor.execute(
         "INSERT INTO users (user_id, username, points) VALUES (?, ?, 0) "
@@ -115,9 +115,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def points(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     update_username(user)
-    pts = get_points(user.id)
-    name = get_display_name(user)
-    await update.message.reply_text(f"{name} har {pts} FWP point 🎯")
+
+    # Admin kan alltid se sina poäng
+    if user.id == ADMIN_ID:
+        pts = get_points(user.id)
+        name = get_display_name(user)
+        await update.message.reply_text(f"{name} har {pts} FWP point 🎯")
+        return
+
+    # Alla andra får detta meddelande tills vidare
+    await update.message.reply_text(
+        "⏳ Point-oversigten opdateres i øjeblikket.\n"
+        "Dine point er gemt og vil snart være synlige igen! 🎯"
+    )
 
 async def claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -145,7 +155,6 @@ async def claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Du har allerede brugt denne kode ❌")
         return
 
-    # Gem vinneren (kun første claim)
     if ACTIVE_DROP.get("winner_id") is None:
         ACTIVE_DROP["winner_id"] = user_id
         ACTIVE_DROP["winner_name"] = get_display_name(user)
@@ -201,6 +210,14 @@ async def admin_newdrop(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("ERROR posting to group:", e)
 
 async def top(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Endast admin kan se /top
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text(
+            "⏳ Topplisten opdateres i øjeblikket.\n"
+            "Den vil snart være synlig igen! 🏆"
+        )
+        return
+
     cursor.execute(
         "SELECT user_id, username, points FROM users ORDER BY points DESC LIMIT 10"
     )
